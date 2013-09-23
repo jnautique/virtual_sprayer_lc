@@ -24,24 +24,26 @@ light up based on
  */
  
 #include <avr/pgmspace.h>
-#include <VirtualWire.h>
 #include "LPD8806.h"
 #include "SPI.h"
 #include "TimerOne.h"
 
 
  // Constant pin connections
-const int LED_0       = 13;   // On-board LED
+const int LED_0         = 13;     // On-board LED
+const int LT_L_CLK      = 15;     // Clock for light pin (A1)
+const int LT_R_DATA     = 16;     // Data for light pin  (A2)
+const int LB            = 3 ;     // Light break input on interrupt pin 3
+const int KNOCK         = A0;     // Knock sensor input
+const int KNOCK_THRESH  = 100;    // Knock threshold
+const int LT_DET_TIME   = 20;     // Number of cycles to lookg for light detect changing state
+
+int LBState = LOW;                // Light break state
+int KnockState = LOW;             // Knock detected
+int KnockVal = 0;                 // Initialize value of knock reading
+int LTtimer=0;                    // Initialize light timer
 
 
-const int LT_L_CLK    = 15;    // Clock for light pin (A1)
-const int LT_R_DATA   = 16;    // Data for light pin  (A2)
-
-//const int CTRL_0      = 12;   // Valve control
-//const int CTRL_1      = 10;   // Valve control
-//const int CTRL_2      = 8;    // Valve control
-
-int LBState = HIGH;           // Light break state
 
 // Declare the number of pixels in strand; 32 = 32 pixels in a row.  The
 // LED strips have 32 LEDs per meter, but you can extend or cut the strip.
@@ -132,33 +134,11 @@ void setup(){
   // Each effect rendering function varies in processing complexity, so
   // the timer allows smooth transitions between effects (otherwise the
   // effects and transitions would jump around in speed...not attractive).
-  //Timer1.initialize();
-  MsTimer2::start();
-  MsTimer2::set(17, callback); // 500ms period
-  
-  // Pushbutton inputs with internal pull-up resistor
-  pinMode(LB_RX, INPUT);
+  Timer1.initialize();
+  Timer1.attachInterrupt(callback, 1000000 / 60); // 60 frames/second
   
   // Outputs
   pinMode(LED_0, OUTPUT); 
-//  pinMode(LB_TX, OUTPUT);     // Default value already set to 12 in library
-//  pinMode(CTRL_1, OUTPUT);
-//  pinMode(CTRL_2, OUTPUT);
-
-  tone (LB_TX, 38000);
-  
-//  randomSeed(analogRead(A0)); //Seed the pseudo-random engine with some true randomness.
-  
-  // Setup for the virtual_wire library
-  //vw_set_ptt_inverted(true);  // Required for DR3100
-  vw_setup(2000);             // Bits per sec
-
-
-  // Update the strip, to start they are all 'off'
-  //strip.show();
-
-
-// Put a light test sequence here  
 
 }
 
@@ -168,49 +148,43 @@ void loop(){
   
   Serial.println("Start of loop");
   
-  const char *msg = "hello";
+  delay (300);
+  // Turn off the LED strip  
+  Timer1.detachInterrupt();
+  dither(strip.Color(0,0,0), 1);           // black, fast
+  // Turn off the onboard LED_0
+  digitalWrite(LED_0, true);
+  
+  
+  while ((analogRead(A0)<KNOCK_THRESH) || !LBState) {
+    // Do nothing
+  }
+  
+ // Once a break is detected, turn onboard LED on
+  digitalWrite(LED_0, true);
+  
+  // Turn on the LED strip
+  Timer1.attachInterrupt(callback, 1000000 / 60); // 60 frames/second
+  
+  // For the next 300ms, look for the light break assertion
+  for (int i = 0;i<LT_DET_TIME;i++) {
+    if (LBState == HIGH) {
+      LTtimer = 7000;
+    }else{
+      LTtimer = 1;
+    }
+  delay (10);
+  }
 
-//  while (!digitalRead(LB_RX)) {
-//    // Do nothing
-//  }
+  delay(LTtimer);
   
-  // Once a break is detected, send the message 
-  digitalWrite(13, true); // Flash a light to show transmitting
-//  vw_send((uint8_t *)msg, strlen(msg));
-//  vw_wait_tx(); // Wait until the whole message is gone
-  digitalWrite(13, false);
-  delay(200);
-  
-  
-  
-//  Timer1.attachInterrupt(callback, 1000000 / 60); // 60 frames/second
-//  delay (100);
-//  
-//  Timer1.detachInterrupt();
-//  dither(strip.Color(0,0,0), 1);           // black, fast
-//  delay (1000);
-//  
-//  Timer1.attachInterrupt(callback, 1000000 / 60); // 60 frames/second
-//  delay (100);
-//  
-//  Timer1.detachInterrupt();
-//  dither(strip.Color(0,0,0), 1);           // black, fast
-//  delay (1000);
-//  
-//  Timer1.attachInterrupt(callback, 1000000 / 60); // 60 frames/second
-//  delay (5000);
-//  
-//   Timer1.detachInterrupt();
-//  dither(strip.Color(0,0,0), 1);           // black, fast
-  
-  
-  // Blink board LED 5 time when we either get a signal or the button
+  // Blink board LED 2 time when we either get a signal or the button
   // is pressed.
-  for (int i = 0; i < 5; i++) {
+  for (int i = 0; i < 2; i++) {
     digitalWrite(LED_0, true);
-    delay(50);
+    delay(25);
     digitalWrite(LED_0, false);
-    delay(50);
+    delay(25);
   }
   
 }
