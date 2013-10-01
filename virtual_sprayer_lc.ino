@@ -34,14 +34,15 @@ const int LED_0         = 13;     // On-board LED
 const int LT_L_CLK      = 15;     // Clock for light pin (A1)
 const int LT_R_DATA     = 16;     // Data for light pin  (A2)
 const int LB            = 3 ;     // Light break input on interrupt pin 3
-const int KNOCK         = A0;     // Knock sensor input
-const int KNOCK_THRESH  = 100;    // Knock threshold
-const int LT_DET_TIME   = 20;     // Number of cycles to lookg for light detect changing state
+const int KNOCK         = A5;     // Knock sensor input
+const int KNOCK_THRESH  = 10;    // Knock threshold
+const int LT_DET_TIME   = 5;     // Number of cycles to lookg for light detect changing state
 
 int LBState = LOW;                // Light break state
 int KnockState = LOW;             // Knock detected
 int KnockVal = 0;                 // Initialize value of knock reading
 int LTtimer=0;                    // Initialize light timer
+int analog_in = 0;
 
 
 
@@ -139,6 +140,7 @@ void setup(){
   
   // Outputs
   pinMode(LED_0, OUTPUT); 
+  pinMode(LB, INPUT);
 
 }
 
@@ -148,17 +150,24 @@ void loop(){
   
   Serial.println("Start of loop");
   
-  delay (300);
+  //delay (300);
   // Turn off the LED strip  
   Timer1.detachInterrupt();
   dither(strip.Color(0,0,0), 1);           // black, fast
   // Turn off the onboard LED_0
   digitalWrite(LED_0, true);
+  Serial.println("Turn off strip");
   
   
-  while ((analogRead(A0)<KNOCK_THRESH) || !LBState) {
-    // Do nothing
+  while ((analog_in<20) && !LBState) {
+    LBState = digitalRead(LB);
+    //serial.println("Wait for knock or hole");
+    //serial.println(LBState);
+    //serial.println("A0:");
+    analog_in = analogRead(A0);
+    Serial.println(analog_in);
   }
+  analog_in = 0;
   
  // Once a break is detected, turn onboard LED on
   digitalWrite(LED_0, true);
@@ -168,10 +177,13 @@ void loop(){
   
   // For the next 300ms, look for the light break assertion
   for (int i = 0;i<LT_DET_TIME;i++) {
+     LBState = digitalRead(LB);
     if (LBState == HIGH) {
-      LTtimer = 7000;
+      LTtimer = 5000;
+      Serial.println("Found light break");
     }else{
       LTtimer = 1;
+      Serial.println("Found knock");
     }
   delay (10);
   }
@@ -186,6 +198,9 @@ void loop(){
     digitalWrite(LED_0, false);
     delay(25);
   }
+  
+  // Setm the state back to low
+  LBState = LOW;
   
 }
 
