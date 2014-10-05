@@ -33,17 +33,18 @@ light up based on
 const int LED_0         = 13;     // On-board LED
 const int LT_L_CLK      = 15;     // Clock for light pin (A1)
 const int LT_R_DATA     = 16;     // Data for light pin  (A2)
-const int LB            = 3 ;     // Light break input on interrupt pin 3
-const int KNOCK         = A5;     // Knock sensor input
-const int KNOCK_THRESH  = 10;    // Knock threshold
-const int LT_DET_TIME   = 5;     // Number of cycles to lookg for light detect changing state
+const int KNOCK         = A0;     // Knock sensor input
+const int KNOCK_THRESH  = 15;    // Knock threshold
+const int LIGHT_THRESH  = 165;
+const int LT_DET_DELAY   = 300;     // Number of cycles to lookg for light detect changing state
 
-int LBState = LOW;                // Light break state
-int KnockState = LOW;             // Knock detected
-int KnockVal = 0;                 // Initialize value of knock reading
-int LTtimer=0;                    // Initialize light timer
-int analog_in = 0;
-
+int LTtimer=1;                    // Initialize light timer.
+volatile int analog_knock_read[3];
+volatile int analog_light_read[3];
+int analog_knock = 0;
+int analog_light = 0;
+int analog_knock_found = 0;
+int analog_light_found = 0;
 
 
 // Declare the number of pixels in strand; 32 = 32 pixels in a row.  The
@@ -92,6 +93,10 @@ byte gamma(byte x);
 long hsv2rgb(long h, byte s, byte v);
 char fixSin(int angle);
 char fixCos(int angle);
+void rainbow(uint8_t wait);
+int knock_check();
+void light_check();
+
 
 // List of image effect and alpha channel rendering functions; the code for
 // each of these appears later in this file.  Just a few to start with...
@@ -114,6 +119,8 @@ void scanner(uint8_t r, uint8_t g, uint8_t b, uint8_t wait);
 void wave(uint32_t c, int cycles, uint8_t wait);
 void rainbowCycle(uint8_t wait);
 uint32_t Wheel(uint16_t WheelPos);
+
+void UpcolorWipe(uint32_t c, uint8_t wait);
  
 void setup(){
   //start serial connection
@@ -136,11 +143,10 @@ void setup(){
   // the timer allows smooth transitions between effects (otherwise the
   // effects and transitions would jump around in speed...not attractive).
   Timer1.initialize();
-  Timer1.attachInterrupt(callback, 1000000 / 60); // 60 frames/second
+  //Timer1.attachInterrupt(callback, 1000000 / 60); // 60 frames/second
   
   // Outputs
   pinMode(LED_0, OUTPUT); 
-  pinMode(LB, INPUT);
 
 }
 
@@ -148,59 +154,147 @@ void setup(){
 
 void loop(){
   
-  Serial.println("Start of loop");
   
-  //delay (300);
-  // Turn off the LED strip  
-  Timer1.detachInterrupt();
-  dither(strip.Color(0,0,0), 1);           // black, fast
   // Turn off the onboard LED_0
-  digitalWrite(LED_0, true);
-  Serial.println("Turn off strip");
+  //digitalWrite(LED_0, false);
+  //Serial.println("Turn off strip");
   
-  
-  while ((analog_in<20) && !LBState) {
-    LBState = digitalRead(LB);
-    //serial.println("Wait for knock or hole");
-    //serial.println(LBState);
-    //serial.println("A0:");
-    analog_in = analogRead(A0);
-    Serial.println(analog_in);
-  }
-  analog_in = 0;
-  
- // Once a break is detected, turn onboard LED on
-  digitalWrite(LED_0, true);
-  
-  // Turn on the LED strip
-  Timer1.attachInterrupt(callback, 1000000 / 60); // 60 frames/second
-  
-  // For the next 300ms, look for the light break assertion
-  for (int i = 0;i<LT_DET_TIME;i++) {
-     LBState = digitalRead(LB);
-    if (LBState == HIGH) {
-      LTtimer = 5000;
-      Serial.println("Found light break");
-    }else{
-      LTtimer = 1;
-      Serial.println("Found knock");
+  analog_knock = 0;
+  analog_light = 0;
+  analog_knock_found = 0;
+  analog_light_found = 0;
+  LTtimer = 1;
+
+  Serial.println();
+  Serial.println("Wait for knock or light break");
+  while ((analog_knock<KNOCK_THRESH) && !analog_light_found) {
+    
+    for (int i=0; i<3; i++) {
+      analog_knock_read[i] = analogRead(A0);
     }
-  delay (10);
+  analog_knock = (analog_knock_read[0] + analog_knock_read[1] + analog_knock_read[2])/3;
+  light_check();
+  
+  }
+  
+  if (analog_knock>KNOCK_THRESH)
+    analog_knock_found = 1;
+    
+  
+  light_check();
+  
+  
+  // Set type of effect to implement and the color of the effect
+  if (analog_knock_found) {
+    if (random(0,2)) {
+      switch ( random(0,7)) {
+        case 0:
+          UpcolorChase2(strip.Color(127,  127,  127),  1); // White
+          break;
+        case 1:
+          UpcolorChase2(strip.Color(127,  0,    0),    1); // Red
+          break;
+        case 2:
+          UpcolorChase2(strip.Color(127,  127,  0),    1); // Yellow
+          break;
+        case 3:
+          UpcolorChase2(strip.Color(0,    127,  0),    1); // Green
+          break;
+        case 4:
+          UpcolorChase2(strip.Color(0,    127,  127),  1); // cyan
+          break;
+        case 5:
+          UpcolorChase2(strip.Color(0,    0,    127),  1); // blue
+          break;
+        case 6:
+          UpcolorChase2(strip.Color(127,  0,    127),  1); // magenta
+          break;
+      }
+    } else {
+      switch ( random(0,7)) {
+        case 0:
+          colorWipe2(strip.Color(127,  127,  127),  1); // White
+          break;
+        case 1:
+          colorWipe2(strip.Color(127,  0,    0),    1); // Red
+          break;
+        case 2:
+          colorWipe2(strip.Color(127,  127,  0),    1); // Yellow
+          break;
+        case 3:
+          colorWipe2(strip.Color(0,    127,  0),    1); // Green
+          break;
+        case 4:
+          colorWipe2(strip.Color(0,    127,  127),  1); // cyan
+          break;
+        case 5:
+          colorWipe2(strip.Color(0,    0,    127),  1); // blue
+          break;
+        case 6:
+          colorWipe2(strip.Color(127,  0,    127),  1); // magenta
+          break;
+      }
+    }
+  }
+  
+  if (analog_light_found) {
+    // Turn on the LED strip
+    Timer1.attachInterrupt(callback, 1000000 / 60); // 60 frames/second
+  }
+      
+    
+  if (analog_light_found) {
+    LTtimer = LT_DET_DELAY;
+  } else {
+    for (int i=0; i<250; i++) {
+      light_check();
+      
+      if (analog_light_found) {
+        // Turn on the LED strip
+        Timer1.attachInterrupt(callback, 1000000 / 60); // 60 frames/second
+        LTtimer = LT_DET_DELAY;
+      }
+      delay(1);
+    }
   }
 
   delay(LTtimer);
   
-  // Blink board LED 2 time when we either get a signal or the button
+  Timer1.detachInterrupt();
+  
+  for (int i=0; i < strip.numPixels(); i++) {
+    strip.setPixelColor(i, 0);  // turn all pixels off
+  }
+  strip.show();
+
+  Serial.println();
+  Serial.println();
+  if (analog_knock_found) {
+    Serial.println("KNOCK KNOCK KNOCK KNOCK KNOCK");
+  }
+  
+  if (analog_light_found)  {
+    Serial.println("light light light light light");
+  }
+    
+  Serial.print("Knock sensor: ");
+  Serial.print(analog_knock);
+  Serial.println();
+  Serial.print("Ligh sensor: ");
+  Serial.print(analog_light);
+  Serial.println();
+  Serial.print("LTtimer: ");
+  Serial.print(LTtimer);
+  Serial.println();
+  
+  // Blink board LED 1 time when we either get a signal or the button
   // is pressed.
-  for (int i = 0; i < 2; i++) {
+  for (int i = 0; i < 1; i++) {
     digitalWrite(LED_0, true);
     delay(25);
     digitalWrite(LED_0, false);
     delay(25);
   }
-  
-  // Setm the state back to low
-  LBState = LOW;
   
 }
 
@@ -278,14 +372,17 @@ void callback() {
     // Randomly pick next image effect and alpha effect indices:
     fxIdx[frontImgIdx] = random((sizeof(renderEffect) / sizeof(renderEffect[0])));
     fxIdx[2]           = random((sizeof(renderAlpha)  / sizeof(renderAlpha[0])));
-    transitionTime     = random(30, 181); // 0.5 to 3 second transitions
+//    transitionTime     = random(30, 181); // 0.5 to 3 second transitions
+    transitionTime     = 30; // 0.5 to 3 second transitions
     fxVars[frontImgIdx][0] = 0; // Effect not yet initialized
     fxVars[2][0]           = 0; // Transition not yet initialized
   } else if(tCounter >= transitionTime) { // End transition
     fxIdx[backImgIdx] = fxIdx[frontImgIdx]; // Move front effect index to back
     backImgIdx        = 1 - backImgIdx;     // Invert back index
-    tCounter          = -120 - random(240); // Hold image 2 to 6 seconds
+    //tCounter          = -120 - random(240); // Hold image 2 to 6 seconds
+    tCounter          = -10; // Hold image 2 to 6 seconds
   }
+
 }
 
 // Cycle through the color wheel, equally spaced around the belt
@@ -800,4 +897,128 @@ char fixCos(int angle) {
                       -pgm_read_byte(&sineTable[angle - 180])) : // Quad 2
     ((angle <= 540) ? -pgm_read_byte(&sineTable[540 - angle])  : // Quad 3
                        pgm_read_byte(&sineTable[angle - 540])) ; // Quad 4
+}
+
+
+void rainbow(uint8_t wait) {
+  int i, j;
+   
+  for (j=0; j < 384; j++) {     // 3 cycles of all 384 colors in the wheel
+    for (i=0; i < strip.numPixels(); i++) {
+      strip.setPixelColor(i, Wheel( (i + j) % 384));
+    }  
+    strip.show();   // write all the pixels out
+    delay(wait);
+  }
+}
+
+
+// fill the dots one after the other with said color
+// good for testing purposes
+void UpcolorWipe(uint32_t c, uint8_t wait) {
+  int i;
+
+  for (i=0; i < (strip.numPixels()/2); i++) {
+      strip.setPixelColor(i, c);
+      strip.setPixelColor(i+32, c);
+      strip.show();
+      delay(wait);
+  }
+}
+
+
+
+// Chase a dot down the strip
+// good for testing purposes
+void UpcolorChase(uint32_t c, uint8_t wait) {
+  int i;
+  int numPixel = strip.numPixels();
+  int numPixelHalf = numPixel/2;
+
+  for (i=0; i < numPixel; i++) {
+    strip.setPixelColor(i, 0);  // turn all pixels off
+  }
+
+  for (i=0; i < numPixelHalf; i++) {
+      strip.setPixelColor(i, c); // set one pixel
+      strip.setPixelColor(i+numPixelHalf, c); // set one pixel
+      strip.show();              // refresh strip display
+      //delay(wait);               // hold image for a moment
+      //delayMicroseconds(wait);
+      light_check();
+      
+      
+      strip.setPixelColor(i, 0); // erase pixel (but don't refresh yet)
+      strip.setPixelColor(i+numPixelHalf, 0); // set one pixel
+      light_check();
+      
+  }
+  strip.show(); // for last erased pixel
+}
+
+
+void UpcolorChase2(uint32_t c, uint8_t wait) {
+  int i;
+  int numPixel = strip.numPixels();
+  int numPixelHalf = numPixel/2;
+
+  for (i=0; i < numPixel; i++) {
+    strip.setPixelColor(i, 0);  // turn all pixels off
+  }
+
+  for (i=0; i < numPixelHalf; i++) {
+      
+      strip.setPixelColor(i, c); // set one pixel
+      strip.setPixelColor(i+numPixelHalf, c); // set one pixel
+      light_check();
+      strip.show();              // refresh strip display
+      light_check();
+      
+      strip.setPixelColor(i, 0); // erase pixel (but don't refresh yet)
+      light_check();
+      strip.setPixelColor(i+numPixelHalf, 0); // set one pixel
+      light_check();
+      
+  }
+  strip.show(); // for last erased pixel
+}
+
+
+void light_check() {
+
+
+  if (!analog_light_found) {
+    for (int i=0; i<3; i++) {
+      analog_light_read[i] = analogRead(A5);
+    }
+    
+    analog_light = (analog_light_read[0] + analog_light_read[1] + analog_light_read[2])/3;  
+    
+    if (analog_light>LIGHT_THRESH) {
+      // Turn on the LED strip
+      analog_light_found = 1;
+    }
+  }
+}
+
+
+// fill the dots one after the other with said color
+// good for testing purposes
+void colorWipe2(uint32_t c, uint8_t wait) {
+  int i;
+  int numPixel = strip.numPixels();
+  int numPixelHalf = numPixel/2;
+
+  for (i=0; i < numPixelHalf; i++) {
+      strip.setPixelColor(i, c);
+      strip.setPixelColor(i+numPixelHalf, c);
+      strip.show();
+      light_check();
+  }
+  
+  for (i=0; i < numPixel; i++) {
+    strip.setPixelColor(i, 0);  // turn all pixels off
+    light_check();
+  }
+  strip.show();
 }
